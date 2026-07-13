@@ -1,0 +1,23 @@
+{
+  "name": "plain-notion-sync",
+  "version": "0.1.0",
+  "description": "One-way daily sync: Plain support threads -> Notion ticket board",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@notionhq/client": "^5.23.1",
+    "@team-plain/typescript-sdk": "^5.12.1",
+    "ioredis": "^5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2"
+  },
+  "type": "module"
+}
