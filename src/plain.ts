@@ -14,13 +14,8 @@ const client = new PlainClient({ apiKey: config.plainApiKey });
 
 const PAGE_SIZE = 50;
 
-/**
- * Fetch all threads updated since `sinceIso` (or all threads if null),
- * with cursor pagination.
- */
-export async function fetchThreadsUpdatedSince(
-  sinceIso: string | null
-): Promise<PlainThread[]> {
+/** Fetch all threads with cursor pagination. Stateless — full scan each run. */
+export async function fetchAllThreads(): Promise<PlainThread[]> {
   const threads: PlainThread[] = [];
   let after: string | undefined = undefined;
 
@@ -28,7 +23,6 @@ export async function fetchThreadsUpdatedSince(
     const res = await client.getThreads({
       first: PAGE_SIZE,
       after,
-      filters: sinceIso ? { updatedAt: { after: sinceIso } } : undefined,
       sortBy: { field: ThreadsSortField.CreatedAt, direction: SortDirection.Asc },
     });
     if (res.error) {

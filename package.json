@@ -11,8 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "@notionhq/client": "^5.23.1",
-    "@team-plain/typescript-sdk": "^5.12.1",
-    "ioredis": "^5.11.1"
+    "@team-plain/typescript-sdk": "^5.12.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

@@ -11,7 +11,6 @@ export const config = {
   plainApiKey: required("PLAIN_API_KEY"),
   notionApiKey: required("NOTION_API_KEY"),
   notionDatabaseId: required("NOTION_DATABASE_ID"),
-  redisUrl: process.env.REDIS_URL ?? "",
 
   // Used only to build Thread Link URLs. Find it in any Plain app URL.
   plainWorkspaceId: required("PLAIN_WORKSPACE_ID"),
@@ -26,8 +25,4 @@ export const config = {
   categoryLabelPrefix: process.env.PLAIN_CATEGORY_LABEL_PREFIX ?? "Category:",
   engStatusFieldKey: process.env.PLAIN_ENG_STATUS_FIELD_KEY ?? "eng_status",
   engStatusLabelPrefix: process.env.PLAIN_ENG_STATUS_LABEL_PREFIX ?? "Eng:",
-
-  // Overlap buffer (minutes) subtracted from last_synced_at to avoid missing
-  // threads updated while a previous run was in flight.
-  overlapMinutes: Number(process.env.SYNC_OVERLAP_MINUTES ?? "60"),
 };

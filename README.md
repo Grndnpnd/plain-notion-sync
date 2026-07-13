@@ -27,24 +27,27 @@ Expected Notion property types:
 
 ## How it works
 
-1. Reads `last_synced_at` from Redis (`plain_notion_sync:last_run`), or a
-   local `.last_run` file if `REDIS_URL` is unset. First run = full backfill.
-2. Fetches Plain threads updated since then (minus a 60-min overlap buffer)
-   via the official `@team-plain/typescript-sdk`, cursor-paginated.
-3. Enriches each thread with customer name/email and channel
+Stateless full scan — no database, no watermark, nothing to deploy besides
+the service itself. Plain is the source of truth; every run:
+
+1. Fetches all threads via the official `@team-plain/typescript-sdk`,
+   cursor-paginated.
+2. Enriches each thread with customer name/email and channel
    (`firstInboundMessageInfo.messageSource`) via one raw GraphQL query per
    batch of 50. If Plain's schema ever drifts, this degrades gracefully
    instead of failing the run.
-4. Loads all existing Notion rows once, keyed on **Ticket ID** (the immutable
+3. Loads all existing Notion rows once, keyed on **Ticket ID** (the immutable
    join key — never edit it).
-5. Upserts: create if missing, update if changed, **skip if identical**
+4. Upserts: create if missing, update if changed, **skip if identical**
    (idempotent — running twice in a row produces zero writes the second time).
    One bad ticket logs and continues; it never aborts the run.
-6. Writes the new watermark and logs a one-line summary:
+5. Logs a one-line summary:
    `fetched N, created X, updated Y, skipped S, failed Z`.
 
-Notion writes are throttled to ~3 req/s. A large first backfill will be slow
-by design; incremental daily runs are fast.
+Notion writes are throttled to ~3 req/s. Because unchanged rows are skipped,
+a daily full scan stays fast after the first backfill — the steady-state cost
+is Plain pagination reads plus one Notion table sweep. This also self-heals:
+a missed or failed run is fully caught up by the next one.
 
 ## Category & Eng Status mapping
 
@@ -76,8 +79,7 @@ npm start
 ## Deploy on Railway (daily cron)
 
 1. New service from this repo.
-2. Set the env vars from `.env.example` (point `REDIS_URL` at the existing
-   Redis instance).
+2. Set the env vars from `.env.example` (four values, no database needed).
 3. Service settings → **Cron Schedule**: `0 6 * * *` (06:00 UTC daily).
    Start command: `npm start`.
 4. The process exits non-zero on total failure so Railway surfaces it.
