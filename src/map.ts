@@ -103,10 +103,12 @@ export function toRow(
   enrich: ThreadEnrichment | undefined
 ): TicketRow {
   const isDone = String(thread.status) === "DONE";
+  // Plain unassigns the thread when it's marked done, but records who did it.
+  // Fall back to that actor so completed tickets still show who handled them.
   const assignee =
-    thread.assignedTo && "fullName" in thread.assignedTo
+    (thread.assignedTo && "fullName" in thread.assignedTo
       ? thread.assignedTo.fullName
-      : null;
+      : null) ?? (isDone ? enrich?.statusChangedByName ?? null : null);
 
   const rawChannel = enrich?.channel ?? null;
   const description = (thread.previewText ?? thread.description ?? "")

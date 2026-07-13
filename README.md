@@ -49,6 +49,13 @@ a daily full scan stays fast after the first backfill — the steady-state cost
 is Plain pagination reads plus one Notion table sweep. This also self-heals:
 a missed or failed run is fully caught up by the next one.
 
+## Assignee fallback
+
+Plain unassigns a thread when it's marked done, recording the actor as
+`statusChangedBy` instead. For Done threads with no assignee, the Assignee
+column falls back to whoever marked it done, so completed tickets still show
+who handled them.
+
 ## Category & Eng Status mapping
 
 Both are looked up first as a Plain **thread field** by key, then as a

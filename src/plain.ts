@@ -8,6 +8,7 @@ export interface ThreadEnrichment {
   customerName: string | null;
   customerEmail: string | null;
   channel: string | null; // EMAIL | CHAT | SLACK | MS_TEAMS | API
+  statusChangedByName: string | null; // e.g. who marked the thread done
 }
 
 const client = new PlainClient({ apiKey: config.plainApiKey });
@@ -36,11 +37,11 @@ export async function fetchAllThreads(): Promise<PlainThread[]> {
 }
 
 /**
- * The SDK's thread fragment only includes customer.id, and channel lives on
- * firstInboundMessageInfo which the fragment omits. Fetch both via one raw
- * query per batch of thread IDs. Degrades gracefully: if the query fails
- * (schema drift), we retry without the message-info field, and if that also
- * fails we return empty enrichment and log once.
+ * The SDK's thread fragment only includes customer.id, and several useful
+ * fields (channel, who changed the status) live outside it. Fetch them via
+ * one raw query per batch of thread IDs. Degrades gracefully: query variants
+ * are tried richest-first, so if Plain's schema ever drifts we fall back to
+ * a simpler variant instead of failing the run.
  */
 export async function fetchEnrichment(
   threadIds: string[]
@@ -48,53 +49,48 @@ export async function fetchEnrichment(
   const out = new Map<string, ThreadEnrichment>();
   const BATCH = 50;
 
-  const fullQuery = `
+  const node = (extra: string) => `
     query enrich($filters: ThreadsFilter, $first: Int) {
       threads(filters: $filters, first: $first) {
         edges { node {
           id
           customer { fullName email { email } }
-          firstInboundMessageInfo { messageSource }
-        } }
-      }
-    }`;
-  const minimalQuery = `
-    query enrich($filters: ThreadsFilter, $first: Int) {
-      threads(filters: $filters, first: $first) {
-        edges { node {
-          id
-          customer { fullName email { email } }
+          ${extra}
         } }
       }
     }`;
 
-  let query = fullQuery;
-  let warned = false;
+  // Richest first; on failure, drop to the next variant for the rest of the run.
+  const variants: string[] = [
+    node(`firstInboundMessageInfo { messageSource }
+          statusChangedBy {
+            ... on UserActor { user { fullName } }
+            ... on MachineUserActor { machineUser { fullName } }
+          }`),
+    node(`firstInboundMessageInfo { messageSource }`),
+    node(``),
+  ];
+  let variant = 0;
 
   for (let i = 0; i < threadIds.length; i += BATCH) {
     const ids = threadIds.slice(i, i + BATCH);
     const variables = { filters: { threadIds: ids }, first: BATCH };
 
-    let res = await client.rawRequest({ query, variables });
-    if (res.error && query === fullQuery) {
-      // Retry this and all subsequent batches without message info.
-      query = minimalQuery;
-      if (!warned) {
-        console.warn(
-          `[enrich] full query failed (${res.error.message}); ` +
-            `falling back without channel info`
-        );
-        warned = true;
-      }
-      res = await client.rawRequest({ query, variables });
+    let res = await client.rawRequest({ query: variants[variant], variables });
+    while (res.error && variant < variants.length - 1) {
+      console.warn(
+        `[enrich] query variant ${variant} failed (${res.error.message}); ` +
+          `falling back to a simpler variant`
+      );
+      variant++;
+      res = await client.rawRequest({ query: variants[variant], variables });
     }
     if (res.error) {
       console.warn(`[enrich] batch failed: ${res.error.message}`);
       continue;
     }
 
-    const edges =
-      (res.data as any)?.threads?.edges ?? [];
+    const edges = (res.data as any)?.threads?.edges ?? [];
     for (const edge of edges) {
       const n = edge?.node;
       if (!n?.id) continue;
@@ -102,6 +98,10 @@ export async function fetchEnrichment(
         customerName: n.customer?.fullName ?? null,
         customerEmail: n.customer?.email?.email ?? null,
         channel: n.firstInboundMessageInfo?.messageSource ?? null,
+        statusChangedByName:
+          n.statusChangedBy?.user?.fullName ??
+          n.statusChangedBy?.machineUser?.fullName ??
+          null,
       });
     }
   }
