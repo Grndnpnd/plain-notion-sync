@@ -1,6 +1,7 @@
 import { fetchAllThreads, fetchEnrichment } from "./plain.js";
 import { toRow } from "./map.js";
 import {
+  validateSchema,
   loadExistingPages,
   createPage,
   updatePage,
@@ -8,6 +9,9 @@ import {
 } from "./notion.js";
 
 async function main(): Promise<void> {
+  // 0. Refuse to run against a mis-typed board.
+  await validateSchema();
+
   // 1. Pull all threads from Plain. Stateless full scan: Plain is the source
   //    of truth and the Notion diff below makes unchanged rows free, so no
   //    watermark or state store is needed.
@@ -24,6 +28,16 @@ async function main(): Promise<void> {
   // 3. Load current Notion state once, keyed by Ticket ID.
   const existing = await loadExistingPages();
   console.log(`[sync] loaded ${existing.size} existing Notion row(s)`);
+
+  // Guard: a non-empty board where no row has a readable Ticket ID means the
+  // join key is broken — mass-creating would duplicate everything. Abort.
+  if (existing.size === 0 && existing.boardHasRows) {
+    console.error(
+      `[sync] board has rows but none have a readable Ticket ID — ` +
+        `aborting instead of duplicating the board. Check the Ticket ID column.`
+    );
+    process.exit(1);
+  }
 
   // 4. Upsert. One bad ticket never aborts the run.
   let created = 0;

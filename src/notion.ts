@@ -29,6 +29,56 @@ export async function resolveDataSourceId(): Promise<string> {
   return dataSourceId;
 }
 
+// Expected Notion property type per column. Guards against silent failures:
+// e.g. Notion's unique_id type silently ignores writes, which would break the
+// Ticket ID join key and duplicate the whole board on every run.
+const EXPECTED_TYPES: Record<string, string> = {
+  [COLUMNS.ticket]: "title",
+  [COLUMNS.status]: "select",
+  [COLUMNS.completedDate]: "date",
+  [COLUMNS.assignee]: "select",
+  [COLUMNS.category]: "select",
+  [COLUMNS.channel]: "select",
+  [COLUMNS.customer]: "rich_text",
+  [COLUMNS.description]: "rich_text",
+  [COLUMNS.dueSla]: "date",
+  [COLUMNS.priority]: "select",
+  [COLUMNS.threadLink]: "url",
+  [COLUMNS.ticketId]: "rich_text",
+  [COLUMNS.engStatus]: "select",
+};
+
+/**
+ * Verify every synced column exists on the data source with the right type.
+ * Exits loudly on mismatch — writing to a wrong-typed property either errors
+ * per-page or, worse, silently no-ops (unique_id), so we refuse to run.
+ */
+export async function validateSchema(): Promise<void> {
+  const dsId = await resolveDataSourceId();
+  await throttle();
+  const ds: any = await notion.dataSources.retrieve({ data_source_id: dsId });
+  const props: Record<string, any> = ds.properties ?? {};
+
+  const problems: string[] = [];
+  for (const [name, expected] of Object.entries(EXPECTED_TYPES)) {
+    const prop = props[name];
+    if (!prop) {
+      problems.push(`missing property "${name}" (expected type: ${expected})`);
+    } else if (prop.type !== expected) {
+      problems.push(
+        `property "${name}" is type "${prop.type}", expected "${expected}"` +
+          ` — change it in Notion via the column menu > Edit property`
+      );
+    }
+  }
+  if (problems.length) {
+    console.error(`[schema] Notion board schema mismatch:`);
+    for (const p of problems) console.error(`[schema]  - ${p}`);
+    console.error(`[schema] refusing to run until the board matches the README's property table.`);
+    process.exit(1);
+  }
+}
+
 interface ExistingPage {
   pageId: string;
   row: Partial<TicketRow>;
@@ -39,9 +89,14 @@ interface ExistingPage {
  * Far cheaper than one query per ticket, and gives us the current values
  * for idempotent diffing.
  */
-export async function loadExistingPages(): Promise<Map<string, ExistingPage>> {
+export async function loadExistingPages(): Promise<
+  Map<string, ExistingPage> & { boardHasRows: boolean }
+> {
   const dsId = await resolveDataSourceId();
-  const out = new Map<string, ExistingPage>();
+  const out = new Map<string, ExistingPage>() as Map<string, ExistingPage> & {
+    boardHasRows: boolean;
+  };
+  out.boardHasRows = false;
   let cursor: string | undefined = undefined;
 
   for (;;) {
@@ -52,6 +107,7 @@ export async function loadExistingPages(): Promise<Map<string, ExistingPage>> {
       page_size: 100,
     });
     for (const page of res.results) {
+      out.boardHasRows = true;
       const ticketId = plainTextOf(page.properties?.[COLUMNS.ticketId]);
       if (!ticketId) continue;
       out.set(ticketId, { pageId: page.id, row: extractRow(page.properties) });
