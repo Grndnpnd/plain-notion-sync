@@ -232,9 +232,10 @@ export async function loadExistingPages(): Promise<ExistingPages> {
     });
     for (const page of res.results) {
       boardHasRows = true;
+      const legacyId = plainTextOf(page.properties?.[COLUMNS.ticketId]);
       const key =
         threadIdFromUrl(urlOf(page.properties?.[COLUMNS.threadLink])) ??
-        plainTextOf(page.properties?.[COLUMNS.ticketId]);
+        (legacyId?.startsWith("th_") ? legacyId : null);
       if (!key) continue;
       const entry: ExistingPage = {
         pageId: page.id,
@@ -311,6 +312,10 @@ export function isUnchanged(
       ? (existing.assigneePersonId ?? null) === resolver.resolve(row)
       : normalize(existing.row.assignee) === normalize(row.assignee);
 
+  const ticketIdMatches =
+    !schema.ticketIdWritable ||
+    normalize(existing.row.ticketRef) === normalize(row.ticketRef);
+
   // Status is compared on the value actually written to the board.
   const targetStatus =
     schema.statusType === "status"
@@ -321,6 +326,7 @@ export function isUnchanged(
   return (
     assigneeMatches &&
     statusMatches &&
+    ticketIdMatches &&
     textKeys.every((k) =>
       normalize(existing.row[k] as string | null | undefined) ===
       normalize(row[k] as string | null)
@@ -382,6 +388,7 @@ function extractRow(props: any): Partial<TicketRow> {
     description: plainTextOf(props[COLUMNS.description]),
     dueSla: dateOf(props[COLUMNS.dueSla]),
     priority: selectOf(props[COLUMNS.priority]) ?? "",
+    ticketRef: plainTextOf(props[COLUMNS.ticketId]) ?? undefined,
     threadLink: urlOf(props[COLUMNS.threadLink]) ?? undefined,
     engStatus: selectOf(props[COLUMNS.engStatus]),
   };

@@ -25,7 +25,7 @@ Accepted Notion property types (the sync detects and adapts at startup):
 | Category, Channel, Priority, Eng Status | Select |
 | Completed Date, Due / SLA | Date |
 | Customer, Description | Text |
-| Ticket ID | Text, or Notion's auto-numbered unique ID (in which case the sync never writes it) |
+| Ticket ID | Text (filled with Plain's ticket number, e.g. T-363), or Notion's auto-numbered unique ID — in which case the sync never writes it and the numbers are Notion's row counter, unrelated to Plain's ticket numbers |
 | Thread Link | URL |
 
 **Join key:** rows are matched to Plain threads by the thread id embedded in
@@ -56,6 +56,14 @@ Notion writes are throttled to ~3 req/s. Because unchanged rows are skipped,
 a daily full scan stays fast after the first backfill — the steady-state cost
 is Plain pagination reads plus one Notion table sweep. This also self-heals:
 a missed or failed run is fully caught up by the next one.
+
+## People-type Assignee and notifications
+
+Writing a people property notifies the person added, same as being assigned
+in the UI. With the idempotent diff this only happens when an assignment
+actually changes — but the first run after switching Assignee to People
+touches every row and notifies everyone at once. Warn the team first, or
+keep Assignee as a Select.
 
 ## Assignee fallback
 

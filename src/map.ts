@@ -127,7 +127,8 @@ export interface TicketRow {
   dueSla: string | null; // ISO date — not populated in v1 (see README)
   priority: string;
   threadLink: string;
-  ticketId: string;
+  ticketId: string; // Plain thread id (join key)
+  ticketRef: string; // Plain's human-facing ticket number, e.g. T-363
   engStatus: string | null;
 }
 
@@ -173,6 +174,7 @@ export function toRow(
     priority: PRIORITY_LABELS[thread.priority] ?? `P${thread.priority}`,
     threadLink: threadUrl(thread.id),
     ticketId: thread.id,
+    ticketRef: thread.ref,
     engStatus: fieldOrLabel(
       thread,
       config.engStatusFieldKey,
@@ -238,12 +240,13 @@ export function toNotionProperties(
   }
 
   if (schema.ticketIdWritable) {
+    // Write Plain's human-facing ticket number (T-363), not the opaque
+    // thread id — the join key lives in Thread Link.
     props[COLUMNS.ticketId] = {
-      rich_text: [{ text: { content: row.ticketId } }],
+      rich_text: [{ text: { content: row.ticketRef } }],
     };
   }
   // unique_id Ticket ID: Notion auto-numbers it; the API can't write it.
-  // The join key is extracted from Thread Link instead.
 
   return props;
 }
