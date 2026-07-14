@@ -22,6 +22,7 @@ export const COLUMNS = {
 export interface BoardSchema {
   statusType: "select" | "status";
   assigneeType: "select" | "people";
+  categoryType: "select" | "multi_select";
   ticketIdWritable: boolean; // false when the column is Notion's unique_id
   // status-type only: sync label -> exact board option name (resolved at
   // startup via case-insensitive matching and PLAIN_STATUS_ALIASES).
@@ -79,6 +80,21 @@ function statusLabel(thread: PlainThread): string {
   return fallback[s] ?? "Todo";
 }
 
+/** All label names matching a prefix (stripped), plus a thread-field value. */
+function categoriesFor(thread: PlainThread): string[] {
+  const out: string[] = [];
+  const field = thread.threadFields.find(
+    (f) => f.key === config.categoryFieldKey
+  );
+  if (field?.stringValue) out.push(field.stringValue);
+  for (const l of thread.labels) {
+    if (!l.labelType.name.startsWith(config.categoryLabelPrefix)) continue;
+    const name = l.labelType.name.slice(config.categoryLabelPrefix.length).trim();
+    if (name) out.push(name);
+  }
+  return [...new Set(out)];
+}
+
 /** Pull a value from thread fields by key, else from labels by name prefix. */
 function fieldOrLabel(
   thread: PlainThread,
@@ -95,6 +111,23 @@ function fieldOrLabel(
   );
   if (label) return label.labelType.name.slice(labelPrefix.length).trim();
   return null;
+}
+
+/** ALL values: thread field (if set) plus every label matching the prefix. */
+function fieldAndLabels(
+  thread: PlainThread,
+  fieldKey: string,
+  labelPrefix: string
+): string[] {
+  const out: string[] = [];
+  const field = thread.threadFields.find((f) => f.key === fieldKey);
+  if (field?.stringValue) out.push(field.stringValue);
+  for (const l of thread.labels) {
+    if (!l.labelType.name.startsWith(labelPrefix)) continue;
+    const v = l.labelType.name.slice(labelPrefix.length).trim();
+    if (v && !out.includes(v)) out.push(v);
+  }
+  return out;
 }
 
 function threadUrl(threadId: string): string {
@@ -120,7 +153,7 @@ export interface TicketRow {
   completedDate: string | null; // ISO date
   assignee: string | null; // display name
   assigneeEmail: string | null; // used for people-property matching
-  category: string | null;
+  categories: string[];
   channel: string | null;
   customer: string | null;
   description: string | null;
@@ -162,11 +195,7 @@ export function toRow(
     completedDate: isDone ? thread.statusChangedAt.iso8601 : null,
     assignee,
     assigneeEmail,
-    category: fieldOrLabel(
-      thread,
-      config.categoryFieldKey,
-      config.categoryLabelPrefix
-    ),
+    categories: categoriesFor(thread),
     channel: rawChannel ? CHANNEL_LABELS[rawChannel] ?? rawChannel : null,
     customer: enrich?.customerName ?? enrich?.customerEmail ?? null,
     description: description || null,
@@ -199,9 +228,7 @@ export function toNotionProperties(
     [COLUMNS.completedDate]: row.completedDate
       ? { date: { start: row.completedDate } }
       : { date: null },
-    [COLUMNS.category]: row.category
-      ? { select: { name: sanitizeSelect(row.category) } }
-      : { select: null },
+
     [COLUMNS.channel]: row.channel
       ? { select: { name: sanitizeSelect(row.channel) } }
       : { select: null },
@@ -224,6 +251,28 @@ export function toNotionProperties(
       ? { select: { name: sanitizeSelect(row.engStatus) } }
       : { select: null },
   };
+
+  props[COLUMNS.category] =
+    schema.categoryType === "multi_select"
+      ? {
+          multi_select: row.categories.map((c) => ({
+            name: sanitizeSelect(c),
+          })),
+        }
+      : row.categories.length
+        ? { select: { name: sanitizeSelect(row.categories[0]) } }
+        : { select: null };
+
+  props[COLUMNS.category] =
+    schema.categoryType === "multi_select"
+      ? {
+          multi_select: row.categories.map((c) => ({
+            name: sanitizeSelect(c),
+          })),
+        }
+      : row.categories.length
+        ? { select: { name: sanitizeSelect(row.categories[0]) } }
+        : { select: null };
 
   props[COLUMNS.status] =
     schema.statusType === "status"

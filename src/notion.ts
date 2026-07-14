@@ -43,7 +43,7 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
   [COLUMNS.status]: ["select", "status"],
   [COLUMNS.completedDate]: ["date"],
   [COLUMNS.assignee]: ["select", "people"],
-  [COLUMNS.category]: ["select"],
+  [COLUMNS.category]: ["select", "multi_select"],
   [COLUMNS.channel]: ["select"],
   [COLUMNS.customer]: ["rich_text"],
   [COLUMNS.description]: ["rich_text"],
@@ -126,11 +126,15 @@ export async function detectAndValidateSchema(): Promise<BoardSchema> {
   const schema: BoardSchema = {
     statusType,
     assigneeType: props[COLUMNS.assignee]?.type === "people" ? "people" : "select",
+    categoryType:
+      props[COLUMNS.category]?.type === "multi_select" ? "multi_select" : "select",
     ticketIdWritable: props[COLUMNS.ticketId]?.type === "rich_text",
     statusMap,
   };
   console.log(
     `[schema] ok — status: ${schema.statusType}, assignee: ${schema.assigneeType}, ` +
+      `category: ${schema.categoryType}, ` +
+      `category: ${schema.categoryType}, ` +
       `ticket id ${schema.ticketIdWritable ? "written" : "auto-numbered (join via Thread Link)"}`
   );
   return schema;
@@ -202,6 +206,7 @@ interface ExistingPage {
   createdTime: string;
   row: Partial<TicketRow>;
   assigneePersonId: string | null; // people mode: current person on the page
+  categories: string[]; // multi_select mode: current values on the page
 }
 
 export interface ExistingPages {
@@ -243,6 +248,9 @@ export async function loadExistingPages(): Promise<ExistingPages> {
         row: extractRow(page.properties),
         assigneePersonId:
           page.properties?.[COLUMNS.assignee]?.people?.[0]?.id ?? null,
+        categories: (page.properties?.[COLUMNS.category]?.multi_select ?? []).map(
+          (o: any) => o.name as string
+        ),
       };
       const existing = pages.get(key);
       if (!existing) {
@@ -302,7 +310,7 @@ export function isUnchanged(
   resolver: PersonResolver
 ): boolean {
   const textKeys: (keyof TicketRow)[] = [
-    "ticket", "category", "channel",
+    "ticket", "channel",
     "customer", "description", "priority", "threadLink", "engStatus",
   ];
   const dateKeys: (keyof TicketRow)[] = ["completedDate", "dueSla"];
@@ -311,6 +319,15 @@ export function isUnchanged(
     schema.assigneeType === "people"
       ? (existing.assigneePersonId ?? null) === resolver.resolve(row)
       : normalize(existing.row.assignee) === normalize(row.assignee);
+
+  const categoryMatches =
+    normalizeList(existing.row.categories) ===
+    normalizeList(
+      schema.categoryType === "multi_select"
+        ? row.categories
+        : row.categories.slice(0, 1)
+    );
+
 
   const ticketIdMatches =
     !schema.ticketIdWritable ||
@@ -326,6 +343,7 @@ export function isUnchanged(
   return (
     assigneeMatches &&
     statusMatches &&
+    categoryMatches &&
     ticketIdMatches &&
     textKeys.every((k) =>
       normalize(existing.row[k] as string | null | undefined) ===
@@ -342,6 +360,11 @@ export function isUnchanged(
 
 function normalize(v: string | null | undefined): string {
   return (v ?? "").trim();
+}
+
+
+function normalizeList(v: string[] | undefined): string {
+  return (v ?? []).map((s) => s.trim()).sort().join("|");
 }
 
 // Notion normalizes date strings (timezone formatting), so compare instants.
@@ -368,6 +391,14 @@ function selectOf(prop: any): string | null {
   return prop?.select?.name ?? prop?.status?.name ?? null;
 }
 
+function multiSelectOf(prop: any): string[] {
+  if (Array.isArray(prop?.multi_select)) {
+    return prop.multi_select.map((o: any) => o?.name ?? "").filter(Boolean);
+  }
+  const single = selectOf(prop);
+  return single ? [single] : [];
+}
+
 function dateOf(prop: any): string | null {
   return prop?.date?.start ?? null;
 }
@@ -382,7 +413,7 @@ function extractRow(props: any): Partial<TicketRow> {
     status: selectOf(props[COLUMNS.status]) ?? "",
     completedDate: dateOf(props[COLUMNS.completedDate]),
     assignee: selectOf(props[COLUMNS.assignee]),
-    category: selectOf(props[COLUMNS.category]),
+    categories: multiSelectOf(props[COLUMNS.category]),
     channel: selectOf(props[COLUMNS.channel]),
     customer: plainTextOf(props[COLUMNS.customer]),
     description: plainTextOf(props[COLUMNS.description]),

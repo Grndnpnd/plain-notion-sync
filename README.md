@@ -22,7 +22,8 @@ Accepted Notion property types (the sync detects and adapts at startup):
 | Ticket | Title |
 | Status | Select, or Notion's native Status (its options must include every value the sync emits: Todo, In Progress, Waiting for Customer, New Reply, Snoozed, Done, Ignored — the API can't create status options, so add missing ones once by hand) |
 | Assignee | Select, or People (Plain assignees are matched to workspace members by email, then by name; unmatched assignees stay blank and log a warning) |
-| Category, Channel, Priority, Eng Status | Select |
+| Category | Multi-select (recommended: every Plain label on the thread becomes a tag), or Select (first label only) |
+| Channel, Priority, Eng Status | Select |
 | Completed Date, Due / SLA | Date |
 | Customer, Description | Text |
 | Ticket ID | Text (filled with Plain's ticket number, e.g. T-363), or Notion's auto-numbered unique ID — in which case the sync never writes it and the numbers are Notion's row counter, unrelated to Plain's ticket numbers |
