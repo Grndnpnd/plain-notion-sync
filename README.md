@@ -15,15 +15,23 @@ Description, Due / SLA, Priority, Thread Link, Ticket ID, Eng Status.
 Property names must match exactly — they're defined in one place,
 `COLUMNS` in `src/map.ts`.
 
-Expected Notion property types:
+Accepted Notion property types (the sync detects and adapts at startup):
 
-| Property | Type |
+| Property | Accepted types |
 |---|---|
 | Ticket | Title |
-| Status, Assignee, Category, Channel, Priority, Eng Status | Select |
+| Status | Select, or Notion's native Status (its options must include every value the sync emits: Todo, In Progress, Waiting for Customer, New Reply, Snoozed, Done, Ignored — the API can't create status options, so add missing ones once by hand) |
+| Assignee | Select, or People (Plain assignees are matched to workspace members by email, then by name; unmatched assignees stay blank and log a warning) |
+| Category, Channel, Priority, Eng Status | Select |
 | Completed Date, Due / SLA | Date |
-| Customer, Description, Ticket ID | Text |
+| Customer, Description | Text |
+| Ticket ID | Text, or Notion's auto-numbered unique ID (in which case the sync never writes it) |
 | Thread Link | URL |
+
+**Join key:** rows are matched to Plain threads by the thread id embedded in
+the Thread Link URL (with a Text Ticket ID as fallback). Don't hand-edit
+Thread Link. If multiple pages share a thread id, the oldest is kept and the
+rest are archived automatically.
 
 ## How it works
 

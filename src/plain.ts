@@ -9,6 +9,7 @@ export interface ThreadEnrichment {
   customerEmail: string | null;
   channel: string | null; // EMAIL | CHAT | SLACK | MS_TEAMS | API
   statusChangedByName: string | null; // e.g. who marked the thread done
+  statusChangedByEmail: string | null;
 }
 
 const client = new PlainClient({ apiKey: config.plainApiKey });
@@ -64,7 +65,7 @@ export async function fetchEnrichment(
   const variants: string[] = [
     node(`firstInboundMessageInfo { messageSource }
           statusChangedBy {
-            ... on UserActor { user { fullName } }
+            ... on UserActor { user { fullName email } }
             ... on MachineUserActor { machineUser { fullName } }
           }`),
     node(`firstInboundMessageInfo { messageSource }`),
@@ -102,6 +103,7 @@ export async function fetchEnrichment(
           n.statusChangedBy?.user?.fullName ??
           n.statusChangedBy?.machineUser?.fullName ??
           null,
+        statusChangedByEmail: n.statusChangedBy?.user?.email ?? null,
       });
     }
   }

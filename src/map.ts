@@ -18,6 +18,24 @@ export const COLUMNS = {
   engStatus: "Eng Status",
 } as const;
 
+/** Detected board schema — the writer adapts to these. */
+export interface BoardSchema {
+  statusType: "select" | "status";
+  assigneeType: "select" | "people";
+  ticketIdWritable: boolean; // false when the column is Notion's unique_id
+}
+
+/** Every status value the sync can emit (needed to validate status-type options). */
+export const STATUS_LABELS = [
+  "Todo",
+  "In Progress",
+  "Waiting for Customer",
+  "New Reply",
+  "Snoozed",
+  "Done",
+  "Ignored",
+] as const;
+
 const PRIORITY_LABELS: Record<number, string> = {
   0: "Urgent",
   1: "High",
@@ -49,9 +67,13 @@ function statusLabel(thread: PlainThread): string {
     ThreadStatusDetailThreadDiscussionResolved: "Done",
   };
   if (detail in map) return map[detail];
-  // Fall back to top-level status.
   const s = String(thread.status);
-  return s.charAt(0) + s.slice(1).toLowerCase(); // TODO -> Todo, DONE -> Done
+  const fallback: Record<string, string> = {
+    TODO: "Todo",
+    SNOOZED: "Snoozed",
+    DONE: "Done",
+  };
+  return fallback[s] ?? "Todo";
 }
 
 /** Pull a value from thread fields by key, else from labels by name prefix. */
@@ -78,6 +100,13 @@ function threadUrl(threadId: string): string {
     .replace("{threadId}", threadId);
 }
 
+/** Extract a Plain thread id (th_...) from a Thread Link URL. */
+export function threadIdFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = url.match(/th_[A-Za-z0-9]+/);
+  return m ? m[0] : null;
+}
+
 /**
  * Plain-value view of a ticket row. Used both to build Notion properties and
  * to diff against the existing page for idempotent updates.
@@ -86,7 +115,8 @@ export interface TicketRow {
   ticket: string;
   status: string;
   completedDate: string | null; // ISO date
-  assignee: string | null;
+  assignee: string | null; // display name
+  assigneeEmail: string | null; // used for people-property matching
   category: string | null;
   channel: string | null;
   customer: string | null;
@@ -103,12 +133,18 @@ export function toRow(
   enrich: ThreadEnrichment | undefined
 ): TicketRow {
   const isDone = String(thread.status) === "DONE";
+
   // Plain unassigns the thread when it's marked done, but records who did it.
   // Fall back to that actor so completed tickets still show who handled them.
+  const assigned =
+    thread.assignedTo && "fullName" in thread.assignedTo
+      ? thread.assignedTo
+      : null;
   const assignee =
-    (thread.assignedTo && "fullName" in thread.assignedTo
-      ? thread.assignedTo.fullName
-      : null) ?? (isDone ? enrich?.statusChangedByName ?? null : null);
+    assigned?.fullName ?? (isDone ? enrich?.statusChangedByName ?? null : null);
+  const assigneeEmail =
+    (assigned && "email" in assigned ? assigned.email : null) ??
+    (isDone ? enrich?.statusChangedByEmail ?? null : null);
 
   const rawChannel = enrich?.channel ?? null;
   const description = (thread.previewText ?? thread.description ?? "")
@@ -121,6 +157,7 @@ export function toRow(
     status: statusLabel(thread),
     completedDate: isDone ? thread.statusChangedAt.iso8601 : null,
     assignee,
+    assigneeEmail,
     category: fieldOrLabel(
       thread,
       config.categoryFieldKey,
@@ -141,19 +178,22 @@ export function toRow(
   };
 }
 
-/** Build the Notion properties payload for a row. Only the 13 owned columns. */
-export function toNotionProperties(row: TicketRow): Record<string, unknown> {
+/**
+ * Build the Notion properties payload for a row, adapted to the board schema.
+ * `resolvePersonId` maps a row's assignee to a Notion user id (people mode).
+ */
+export function toNotionProperties(
+  row: TicketRow,
+  schema: BoardSchema,
+  resolvePersonId: (row: TicketRow) => string | null
+): Record<string, unknown> {
   const props: Record<string, unknown> = {
     [COLUMNS.ticket]: {
       title: [{ text: { content: row.ticket.slice(0, 2000) } }],
     },
-    [COLUMNS.status]: { select: { name: row.status } },
     [COLUMNS.completedDate]: row.completedDate
       ? { date: { start: row.completedDate } }
       : { date: null },
-    [COLUMNS.assignee]: row.assignee
-      ? { select: { name: sanitizeSelect(row.assignee) } }
-      : { select: null },
     [COLUMNS.category]: row.category
       ? { select: { name: sanitizeSelect(row.category) } }
       : { select: null },
@@ -175,13 +215,33 @@ export function toNotionProperties(row: TicketRow): Record<string, unknown> {
       : { date: null },
     [COLUMNS.priority]: { select: { name: row.priority } },
     [COLUMNS.threadLink]: { url: row.threadLink },
-    [COLUMNS.ticketId]: {
-      rich_text: [{ text: { content: row.ticketId } }],
-    },
     [COLUMNS.engStatus]: row.engStatus
       ? { select: { name: sanitizeSelect(row.engStatus) } }
       : { select: null },
   };
+
+  props[COLUMNS.status] =
+    schema.statusType === "status"
+      ? { status: { name: row.status } }
+      : { select: { name: row.status } };
+
+  if (schema.assigneeType === "people") {
+    const personId = resolvePersonId(row);
+    props[COLUMNS.assignee] = { people: personId ? [{ id: personId }] : [] };
+  } else {
+    props[COLUMNS.assignee] = row.assignee
+      ? { select: { name: sanitizeSelect(row.assignee) } }
+      : { select: null };
+  }
+
+  if (schema.ticketIdWritable) {
+    props[COLUMNS.ticketId] = {
+      rich_text: [{ text: { content: row.ticketId } }],
+    };
+  }
+  // unique_id Ticket ID: Notion auto-numbers it; the API can't write it.
+  // The join key is extracted from Thread Link instead.
+
   return props;
 }
 
