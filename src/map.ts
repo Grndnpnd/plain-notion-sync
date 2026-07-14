@@ -23,6 +23,9 @@ export interface BoardSchema {
   statusType: "select" | "status";
   assigneeType: "select" | "people";
   ticketIdWritable: boolean; // false when the column is Notion's unique_id
+  // status-type only: sync label -> exact board option name (resolved at
+  // startup via case-insensitive matching and PLAIN_STATUS_ALIASES).
+  statusMap: Record<string, string>;
 }
 
 /** Every status value the sync can emit (needed to validate status-type options). */
@@ -222,7 +225,7 @@ export function toNotionProperties(
 
   props[COLUMNS.status] =
     schema.statusType === "status"
-      ? { status: { name: row.status } }
+      ? { status: { name: schema.statusMap[row.status] ?? row.status } }
       : { select: { name: row.status } };
 
   if (schema.assigneeType === "people") {

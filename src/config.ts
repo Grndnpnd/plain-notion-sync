@@ -25,4 +25,22 @@ export const config = {
   categoryLabelPrefix: process.env.PLAIN_CATEGORY_LABEL_PREFIX ?? "Category:",
   engStatusFieldKey: process.env.PLAIN_ENG_STATUS_FIELD_KEY ?? "eng_status",
   engStatusLabelPrefix: process.env.PLAIN_ENG_STATUS_LABEL_PREFIX ?? "Eng:",
+
+  // For a status-type Status column: map sync labels to board options when
+  // the board doesn't have an option of that name. Format: "A=B;C=D".
+  // Matching is case-insensitive, so capitalization differences never need
+  // an alias.
+  statusAliases: parseAliases(
+    process.env.PLAIN_STATUS_ALIASES ?? "Snoozed=Waiting for Customer"
+  ),
 };
+
+function parseAliases(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const pair of raw.split(";")) {
+    const idx = pair.indexOf("=");
+    if (idx <= 0) continue;
+    out[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+  }
+  return out;
+}

@@ -78,17 +78,40 @@ export async function detectAndValidateSchema(): Promise<BoardSchema> {
   }
 
   const statusType = props[COLUMNS.status]?.type === "status" ? "status" : "select";
+  const statusMap: Record<string, string> = {};
   if (statusType === "status") {
     const options: string[] = (props[COLUMNS.status]?.status?.options ?? []).map(
       (o: any) => o.name
     );
-    const missing = STATUS_LABELS.filter((l) => !options.includes(l));
-    if (missing.length) {
+    const byLower = new Map(options.map((o) => [o.toLowerCase(), o]));
+    const resolve = (label: string): string | null =>
+      byLower.get(label.toLowerCase()) ?? null;
+
+    const unresolved: string[] = [];
+    for (const label of STATUS_LABELS) {
+      const direct = resolve(label);
+      if (direct) {
+        statusMap[label] = direct;
+        continue;
+      }
+      const alias = config.statusAliases[label];
+      const viaAlias = alias ? resolve(alias) : null;
+      if (viaAlias) {
+        statusMap[label] = viaAlias;
+        continue;
+      }
+      unresolved.push(label);
+    }
+    for (const [label, target] of Object.entries(statusMap)) {
+      if (label !== target) console.log(`[schema] status "${label}" -> board option "${target}"`);
+    }
+    if (unresolved.length) {
       problems.push(
-        `Status is a status-type property but is missing option(s): ` +
-          missing.map((m) => `"${m}"`).join(", ") +
-          ` — the API can't create status options, so add them once in Notion ` +
-          `via the Status column menu > Edit property > add each option`
+        `Status is a status-type property with no option matching: ` +
+          unresolved.map((m) => `"${m}"`).join(", ") +
+          ` (case-insensitive). Either add the option(s) in Notion, or map ` +
+          `them to existing options via PLAIN_STATUS_ALIASES, e.g. ` +
+          `PLAIN_STATUS_ALIASES="${unresolved[0]}=Todo"`
       );
     }
   }
@@ -104,6 +127,7 @@ export async function detectAndValidateSchema(): Promise<BoardSchema> {
     statusType,
     assigneeType: props[COLUMNS.assignee]?.type === "people" ? "people" : "select",
     ticketIdWritable: props[COLUMNS.ticketId]?.type === "rich_text",
+    statusMap,
   };
   console.log(
     `[schema] ok — status: ${schema.statusType}, assignee: ${schema.assigneeType}, ` +
@@ -277,7 +301,7 @@ export function isUnchanged(
   resolver: PersonResolver
 ): boolean {
   const textKeys: (keyof TicketRow)[] = [
-    "ticket", "status", "category", "channel",
+    "ticket", "category", "channel",
     "customer", "description", "priority", "threadLink", "engStatus",
   ];
   const dateKeys: (keyof TicketRow)[] = ["completedDate", "dueSla"];
@@ -287,8 +311,16 @@ export function isUnchanged(
       ? (existing.assigneePersonId ?? null) === resolver.resolve(row)
       : normalize(existing.row.assignee) === normalize(row.assignee);
 
+  // Status is compared on the value actually written to the board.
+  const targetStatus =
+    schema.statusType === "status"
+      ? schema.statusMap[row.status] ?? row.status
+      : row.status;
+  const statusMatches = normalize(existing.row.status) === normalize(targetStatus);
+
   return (
     assigneeMatches &&
+    statusMatches &&
     textKeys.every((k) =>
       normalize(existing.row[k] as string | null | undefined) ===
       normalize(row[k] as string | null)
