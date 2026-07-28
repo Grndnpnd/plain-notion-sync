@@ -66,6 +66,19 @@ actually changes — but the first run after switching Assignee to People
 touches every row and notifies everyone at once. Warn the team first, or
 keep Assignee as a Select.
 
+## Assignee aliases
+
+When Assignee is a people property, Plain assignees are matched to Notion
+members by email, then display name. Anything that can't match (bots, or a
+Plain email differing from the Notion one) logs
+`[users] no Notion member matches Plain assignee "X"` and stays blank. Map
+those manually with `PLAIN_ASSIGNEE_ALIASES` — keys are the Plain name/email
+exactly as logged, values are the Notion member's email or display name:
+
+```
+PLAIN_ASSIGNEE_ALIASES=igor@bankr.bot=igor@bankr.com;AI agent=Frenchie
+```
+
 ## Assignee fallback
 
 Plain unassigns a thread when it's marked done, recording the actor as

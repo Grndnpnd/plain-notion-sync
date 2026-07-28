@@ -177,14 +177,21 @@ export async function buildPersonResolver(
   }
   console.log(`[users] loaded ${byName.size} workspace member(s) for assignee matching`);
 
+  // Alias table: Plain name/email -> Notion member email or name.
+  const aliases = new Map<string, string>(
+    Object.entries(config.assigneeAliases).map(([k, v]) => [k.toLowerCase(), v])
+  );
+  const lookup = (v: string | null): string | null => {
+    if (!v) return null;
+    const key = (aliases.get(v.toLowerCase()) ?? v).toLowerCase();
+    return byEmail.get(key) ?? byName.get(key) ?? null;
+  };
+
   const warned = new Set<string>();
   return {
     resolve: (row: TicketRow) => {
       if (!row.assignee && !row.assigneeEmail) return null;
-      const id =
-        (row.assigneeEmail && byEmail.get(row.assigneeEmail.toLowerCase())) ||
-        (row.assignee && byName.get(row.assignee.toLowerCase())) ||
-        null;
+      const id = lookup(row.assigneeEmail) ?? lookup(row.assignee);
       if (!id) {
         const key = row.assignee ?? row.assigneeEmail ?? "";
         if (!warned.has(key)) {

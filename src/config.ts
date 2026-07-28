@@ -33,6 +33,12 @@ export const config = {
   statusAliases: parseAliases(
     process.env.PLAIN_STATUS_ALIASES ?? "Snoozed=Waiting for Customer"
   ),
+
+  // Map Plain assignees that don't auto-match to Notion members (people-type
+  // Assignee only). Keys are the Plain name or email exactly as the sync
+  // logs them; values are the Notion member's email or display name.
+  // Format: "igor@bankr.bot=Igor Petrov;AI agent=Frenchie"
+  assigneeAliases: parseAliases(process.env.PLAIN_ASSIGNEE_ALIASES ?? ""),
 };
 
 function parseAliases(raw: string): Record<string, string> {
