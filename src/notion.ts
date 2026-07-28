@@ -302,6 +302,73 @@ export async function updatePage(
   });
 }
 
+/** Names of fields whose current board value differs from the row. */
+export function changedFields(
+  existing: ExistingPage,
+  row: TicketRow,
+  schema: BoardSchema,
+  resolver: PersonResolver
+): string[] {
+  const out: string[] = [];
+
+  if (
+    schema.assigneeType === "people"
+      ? (existing.assigneePersonId ?? null) !== resolver.resolve(row)
+      : normalize(existing.row.assignee) !== normalize(row.assignee)
+  ) {
+    out.push("assignee");
+  }
+
+  const targetStatus =
+    schema.statusType === "status"
+      ? schema.statusMap[row.status] ?? row.status
+      : row.status;
+  if (normalize(existing.row.status) !== normalize(targetStatus)) out.push("status");
+
+  if (
+    normalizeList(existing.row.categories) !==
+    normalizeList(
+      schema.categoryType === "multi_select"
+        ? row.categories
+        : row.categories.slice(0, 1)
+    )
+  ) {
+    out.push("category");
+  }
+
+  if (
+    schema.ticketIdWritable &&
+    normalize(existing.row.ticketRef) !== normalize(row.ticketRef)
+  ) {
+    out.push("ticketId");
+  }
+
+  const textKeys: (keyof TicketRow)[] = [
+    "ticket", "channel", "customer", "description", "priority",
+    "threadLink", "engStatus",
+  ];
+  for (const k of textKeys) {
+    if (
+      normalize(existing.row[k] as string | null | undefined) !==
+      normalize(row[k] as string | null)
+    ) {
+      out.push(k);
+    }
+  }
+  const dateKeys: (keyof TicketRow)[] = ["completedDate", "dueSla"];
+  for (const k of dateKeys) {
+    if (
+      !sameInstant(
+        existing.row[k] as string | null | undefined,
+        row[k] as string | null
+      )
+    ) {
+      out.push(k);
+    }
+  }
+  return out;
+}
+
 /** True if the existing page already matches the row (skip the write). */
 export function isUnchanged(
   existing: ExistingPage,
@@ -374,7 +441,8 @@ function sameInstant(a: string | null | undefined, b: string | null | undefined)
   const ta = Date.parse(a);
   const tb = Date.parse(b);
   if (Number.isNaN(ta) || Number.isNaN(tb)) return normalize(a) === normalize(b);
-  return ta === tb;
+  // Notion stores date-times at minute precision; compare at that granularity.
+  return Math.floor(ta / 60000) === Math.floor(tb / 60000);
 }
 
 // ---- Notion property value extraction (for diffing) ----

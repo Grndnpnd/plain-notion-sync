@@ -7,7 +7,7 @@ import {
   archivePage,
   createPage,
   updatePage,
-  isUnchanged,
+  changedFields,
 } from "./notion.js";
 
 async function main(): Promise<void> {
@@ -63,6 +63,7 @@ async function main(): Promise<void> {
   let updated = 0;
   let skipped = 0;
   let failed = 0;
+  const changeDrivers: Record<string, number> = {};
 
   for (const thread of threads) {
     try {
@@ -71,11 +72,15 @@ async function main(): Promise<void> {
       if (!page) {
         await createPage(row, schema, resolver);
         created++;
-      } else if (isUnchanged(page, row, schema, resolver)) {
-        skipped++;
       } else {
-        await updatePage(page.pageId, row, schema, resolver);
-        updated++;
+        const changed = changedFields(page, row, schema, resolver);
+        if (changed.length === 0) {
+          skipped++;
+        } else {
+          for (const f of changed) changeDrivers[f] = (changeDrivers[f] ?? 0) + 1;
+          await updatePage(page.pageId, row, schema, resolver);
+          updated++;
+        }
       }
     } catch (err) {
       failed++;
@@ -86,6 +91,13 @@ async function main(): Promise<void> {
     }
   }
 
+  if (updated > 0) {
+    const drivers = Object.entries(changeDrivers)
+      .sort((a, b) => b[1] - a[1])
+      .map(([f, n]) => `${f}: ${n}`)
+      .join(", ");
+    console.log(`[sync] update drivers — ${drivers}`);
+  }
   console.log(
     `[sync] done — fetched ${threads.length}, created ${created}, ` +
       `updated ${updated}, skipped ${skipped}, failed ${failed}` +
