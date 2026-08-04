@@ -1,4 +1,4 @@
-import { fetchAllThreads, fetchEnrichment } from "./plain.js";
+import { fetchAllThreads, fetchEnrichment, dumpThreadShape } from "./plain.js";
 import { toRow } from "./map.js";
 import {
   detectAndValidateSchema,
@@ -23,6 +23,9 @@ async function main(): Promise<void> {
     console.log(`[sync] done — fetched 0, created 0, updated 0, skipped 0, failed 0`);
     return;
   }
+
+  // 1b. Optional diagnostic dump (PROBE_REF), then continue normally.
+  await dumpThreadShape(threads);
 
   // 2. Enrich with customer name/email, channel, and status-changed-by.
   const enrichment = await fetchEnrichment(threads.map((t) => t.id));

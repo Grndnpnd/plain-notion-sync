@@ -218,3 +218,94 @@ function firstMessageTextOf(node: any): string | null {
   candidates.sort((a, b) => a.ts.localeCompare(b.ts));
   return candidates[0].text;
 }
+
+/**
+ * Diagnostic: dump one thread's raw timeline so unmapped entry/component
+ * shapes can be identified. Triggered by PROBE_REF during a normal run.
+ * Requests __typename generically at every level, plus text fields for the
+ * shapes we know, so an unhandled component still reveals its type name.
+ */
+export async function dumpThreadShape(threads: PlainThread[]): Promise<void> {
+  const ref = config.probeRef;
+  if (!ref) return;
+
+  const match = ref.startsWith("th_")
+    ? threads.find((t) => t.id === ref)
+    : threads.find((t) => t.ref === ref);
+  if (!match) {
+    console.warn(`[probe] PROBE_REF=${ref} matched no thread`);
+    return;
+  }
+
+  console.log(`[probe] ${ref} -> ${match.id}`);
+  console.log(`[probe] threadFields: ${JSON.stringify(match.threadFields)}`);
+  console.log(`[probe] labels: ${match.labels.map((l) => l.labelType.name).join(", ") || "(none)"}`);
+  console.log(`[probe] previewText: ${JSON.stringify(match.previewText ?? null)}`);
+
+  const variants = [
+    `query probe($id: ID!) {
+       thread(threadId: $id) {
+         timelineEntries(last: 12) {
+           edges { node {
+             timestamp { iso8601 }
+             entry {
+               __typename
+               ... on EmailEntry { textContent subject }
+               ... on ChatEntry { text }
+               ... on CustomEntry {
+                 title
+                 components {
+                   __typename
+                   ... on ComponentText { text }
+                   ... on ComponentCopyButton { copyButtonValue }
+                   ... on ComponentRow {
+                     rowMainContent { __typename }
+                     rowAsideContent { __typename }
+                   }
+                   ... on ComponentContainer { containerContent { __typename } }
+                   ... on ComponentBadge { badgeLabel }
+                   ... on ComponentLinkButton { linkButtonLabel linkButtonUrl }
+                 }
+               }
+             }
+           } }
+         }
+       }
+     }`,
+    `query probe($id: ID!) {
+       thread(threadId: $id) {
+         timelineEntries(last: 12) {
+           edges { node {
+             timestamp { iso8601 }
+             entry {
+               __typename
+               ... on CustomEntry { title components { __typename } }
+             }
+           } }
+         }
+       }
+     }`,
+    `query probe($id: ID!) {
+       thread(threadId: $id) {
+         timelineEntries(last: 12) {
+           edges { node { timestamp { iso8601 } entry { __typename } } }
+         }
+       }
+     }`,
+  ];
+
+  for (let i = 0; i < variants.length; i++) {
+    const res = await client.rawRequest({
+      query: variants[i],
+      variables: { id: match.id },
+    });
+    if (res.error) {
+      console.warn(`[probe] variant ${i} failed: ${res.error.message}`);
+      continue;
+    }
+    console.log(`[probe] raw timeline (variant ${i}):`);
+    console.log(JSON.stringify(res.data, null, 2));
+    return;
+  }
+  console.warn(`[probe] all variants failed`);
+}

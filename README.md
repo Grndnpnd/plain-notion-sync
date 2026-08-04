@@ -98,13 +98,21 @@ sync logs `optional column "X Handle" not on the board — skipping it` and
 runs normally. It never fails schema validation, so the column can be added
 to Notion before or after this ships, in any order.
 
-To find which key Plain actually uses for a form field:
+To find which key Plain actually uses for a form field, either:
 
 ```
 npm run probe -- T-512        # ticket ref, or a th_... id
 ```
 
-Dumps that thread's fields, labels, preview text, and timeline entry shapes.
+or, without changing the start command (e.g. on Railway), set
+
+```
+PROBE_REF=T-512
+```
+
+and the next normal sync run dumps that thread's fields, labels, preview
+text, and raw timeline entry/component shapes to the log, then proceeds as
+usual. Unset it afterwards.
 
 ## Assignee aliases
 

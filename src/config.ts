@@ -56,6 +56,11 @@ export const config = {
   // Matched case-insensitively; everything up to end of line is the value.
   xHandleBodyLabel:
     process.env.PLAIN_X_HANDLE_BODY_LABEL ?? "X Handle / Project X Handle",
+
+  // Set to a ticket ref (T-501) or thread id (th_...) to dump that thread's
+  // raw shape during a normal sync run, then unset. Diagnostic only — the
+  // sync proceeds as usual afterwards.
+  probeRef: (process.env.PROBE_REF ?? "").trim(),
 };
 
 function parseAliases(raw: string): Record<string, string> {
