@@ -66,6 +66,37 @@ actually changes — but the first run after switching Assignee to People
 touches every row and notifies everyone at once. Warn the team first, or
 keep Assignee as a Select.
 
+## X Handle (optional column)
+
+Populates an **X Handle** column from the support request form's
+"X Handle / Project X Handle" field. Resolution order:
+
+1. thread field, trying each key in `PLAIN_X_HANDLE_FIELD_KEYS`
+   (default `x_handle,twitter_handle,x_account,handle,x`)
+2. a labelled line in the first message body, matching
+   `PLAIN_X_HANDLE_BODY_LABEL` (default `X Handle / Project X Handle`),
+   value on the same line or the next
+
+The body scrape is shape-agnostic: email/chat bodies and structured form
+submissions (Plain custom entries, where the label and value can live in
+separate nested components) are both flattened to text before matching, so
+the field is found either way.
+
+Values are normalized to `@handle`, including full `x.com/...` URLs.
+
+**Optional-column behaviour:** if the board has no `X Handle` property the
+sync logs `optional column "X Handle" not on the board — skipping it` and
+runs normally. It never fails schema validation, so the column can be added
+to Notion before or after this ships, in any order.
+
+To find which key Plain actually uses for a form field:
+
+```
+npm run probe -- T-512        # ticket ref, or a th_... id
+```
+
+Dumps that thread's fields, labels, preview text, and timeline entry shapes.
+
 ## Assignee aliases
 
 When Assignee is a people property, Plain assignees are matched to Notion

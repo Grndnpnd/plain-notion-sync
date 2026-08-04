@@ -10,6 +10,7 @@ export interface ThreadEnrichment {
   channel: string | null; // EMAIL | CHAT | SLACK | MS_TEAMS | API
   statusChangedByName: string | null; // e.g. who marked the thread done
   statusChangedByEmail: string | null;
+  firstMessageText: string | null; // full first-message body (form submissions)
 }
 
 const client = new PlainClient({ apiKey: config.plainApiKey });
@@ -62,7 +63,52 @@ export async function fetchEnrichment(
     }`;
 
   // Richest first; on failure, drop to the next variant for the rest of the run.
+  // Form submissions may arrive as a structured CustomEntry rather than an
+  // email/chat message, so ask for component text too. Richest variant first;
+  // the tiering below falls back if a shape isn't in this workspace's schema.
+  const timelineRich = `
+    timelineEntries(first: 5) {
+      edges { node { entry {
+        __typename
+        ... on EmailEntry { textContent }
+        ... on ChatEntry { text }
+        ... on CustomEntry {
+          title
+          components {
+            __typename
+            ... on ComponentText { text }
+            ... on ComponentCopyButton { copyButtonValue copyButtonTooltipLabel }
+            ... on ComponentRow {
+              rowMainContent { __typename ... on ComponentText { text } }
+              rowAsideContent { __typename ... on ComponentText { text } }
+            }
+          }
+        }
+      } } }
+    }`;
+
+  const timelineBasic = `
+    timelineEntries(first: 5) {
+      edges { node { entry {
+        __typename
+        ... on EmailEntry { textContent }
+        ... on ChatEntry { text }
+      } } }
+    }`;
+
   const variants: string[] = [
+    node(`firstInboundMessageInfo { messageSource }
+          statusChangedBy {
+            ... on UserActor { user { fullName email } }
+            ... on MachineUserActor { machineUser { fullName } }
+          }
+          ${timelineRich}`),
+    node(`firstInboundMessageInfo { messageSource }
+          statusChangedBy {
+            ... on UserActor { user { fullName email } }
+            ... on MachineUserActor { machineUser { fullName } }
+          }
+          ${timelineBasic}`),
     node(`firstInboundMessageInfo { messageSource }
           statusChangedBy {
             ... on UserActor { user { fullName email } }
@@ -104,8 +150,53 @@ export async function fetchEnrichment(
           n.statusChangedBy?.machineUser?.fullName ??
           null,
         statusChangedByEmail: n.statusChangedBy?.user?.email ?? null,
+        firstMessageText: firstMessageTextOf(n),
       });
     }
   }
   return out;
+}
+
+/**
+ * Flatten a timeline entry into searchable text, whatever its shape.
+ * Email/chat bodies come back as one string; structured form submissions
+ * come back as nested components, so walk the object and collect every
+ * text-bearing leaf in document order. Shape-agnostic on purpose: Plain can
+ * render forms as custom entries and the field layout varies by workspace.
+ */
+const TEXT_KEYS = new Set([
+  "textContent",
+  "text",
+  "title",
+  "copyButtonValue",
+  "copyButtonTooltipLabel",
+]);
+
+function collectText(value: unknown, out: string[], depth = 0): void {
+  if (depth > 8 || value == null) return;
+  if (Array.isArray(value)) {
+    for (const v of value) collectText(v, out, depth + 1);
+    return;
+  }
+  if (typeof value !== "object") return;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (k === "__typename") continue;
+    if (typeof v === "string") {
+      if (TEXT_KEYS.has(k) && v.trim()) out.push(v.trim());
+    } else {
+      collectText(v, out, depth + 1);
+    }
+  }
+}
+
+/** Text of the first timeline entry that carries any, else null. */
+function firstMessageTextOf(node: any): string | null {
+  const edges = node?.timelineEntries?.edges ?? [];
+  for (const e of edges) {
+    const parts: string[] = [];
+    collectText(e?.node?.entry, parts);
+    const joined = parts.join("\n").trim();
+    if (joined) return joined;
+  }
+  return null;
 }

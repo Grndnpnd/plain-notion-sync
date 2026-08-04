@@ -16,10 +16,20 @@ export const COLUMNS = {
   threadLink: "Thread Link",
   ticketId: "Ticket ID",
   engStatus: "Eng Status",
+  xHandle: "X Handle",
 } as const;
+
+/**
+ * Columns the sync writes only when the board has them. A missing optional
+ * column logs once and is skipped — it never fails schema validation, so
+ * adding one here can't break a running sync before the board catches up.
+ */
+export const OPTIONAL_COLUMNS: string[] = [COLUMNS.xHandle];
 
 /** Detected board schema — the writer adapts to these. */
 export interface BoardSchema {
+  // Optional columns actually present on this board.
+  presentOptional: Set<string>;
   statusType: "select" | "status";
   assigneeType: "select" | "people";
   categoryType: "select" | "multi_select";
@@ -130,6 +140,44 @@ function fieldAndLabels(
   return out;
 }
 
+/** First non-empty thread-field value across candidate keys. */
+function fieldByKeys(thread: PlainThread, keys: string[]): string | null {
+  for (const key of keys) {
+    const f = thread.threadFields.find((tf) => tf.key === key);
+    if (f?.stringValue?.trim()) return f.stringValue.trim();
+  }
+  return null;
+}
+
+/**
+ * Pull "Label: value" out of a form-submission body. Plain renders form
+ * submissions as labelled lines; the value may sit on the same line or the
+ * next one.
+ */
+function labelledValueFromBody(
+  body: string | null | undefined,
+  label: string
+): string | null {
+  if (!body) return null;
+  const esc = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sameLine = new RegExp(`${esc}\\s*:\\s*(.+)`, "i").exec(body);
+  if (sameLine?.[1]?.trim()) return sameLine[1].trim().split(/\s{2,}/)[0];
+  const nextLine = new RegExp(`${esc}\\s*:?\\s*[\\r\\n]+\\s*(.+)`, "i").exec(body);
+  if (nextLine?.[1]?.trim()) return nextLine[1].trim();
+  return null;
+}
+
+/** Normalize an X handle to @form, tolerating full profile URLs. */
+function normalizeHandle(raw: string | null): string | null {
+  if (!raw) return null;
+  let v = raw.trim().split(/\s+/)[0];
+  const url = v.match(/(?:twitter\.com|x\.com)\/(@?[A-Za-z0-9_]{1,15})/i);
+  if (url) v = url[1];
+  v = v.replace(/^@+/, "").replace(/[^A-Za-z0-9_]/g, "");
+  if (!v) return null;
+  return `@${v}`;
+}
+
 function threadUrl(threadId: string): string {
   return config.threadUrlTemplate
     .replace("{workspaceId}", config.plainWorkspaceId)
@@ -163,6 +211,7 @@ export interface TicketRow {
   ticketId: string; // Plain thread id (join key)
   ticketRef: string; // Plain's human-facing ticket number, e.g. T-363
   engStatus: string | null;
+  xHandle: string | null; // from the support request form
 }
 
 export function toRow(
@@ -208,6 +257,13 @@ export function toRow(
       thread,
       config.engStatusFieldKey,
       config.engStatusLabelPrefix
+    ),
+    xHandle: normalizeHandle(
+      fieldByKeys(thread, config.xHandleFieldKeys) ??
+        labelledValueFromBody(
+          enrich?.firstMessageText ?? thread.previewText,
+          config.xHandleBodyLabel
+        )
     ),
   };
 }
@@ -286,6 +342,12 @@ export function toNotionProperties(
     props[COLUMNS.assignee] = row.assignee
       ? { select: { name: sanitizeSelect(row.assignee) } }
       : { select: null };
+  }
+
+  if (schema.presentOptional.has(COLUMNS.xHandle)) {
+    props[COLUMNS.xHandle] = {
+      rich_text: row.xHandle ? [{ text: { content: row.xHandle } }] : [],
+    };
   }
 
   if (schema.ticketIdWritable) {

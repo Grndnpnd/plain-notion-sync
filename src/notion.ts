@@ -2,6 +2,7 @@ import { Client } from "@notionhq/client";
 import { config } from "./config.js";
 import {
   COLUMNS,
+  OPTIONAL_COLUMNS,
   STATUS_LABELS,
   threadIdFromUrl,
   type BoardSchema,
@@ -52,6 +53,7 @@ const ACCEPTED_TYPES: Record<string, string[]> = {
   [COLUMNS.threadLink]: ["url"],
   [COLUMNS.ticketId]: ["rich_text", "unique_id"],
   [COLUMNS.engStatus]: ["select"],
+  [COLUMNS.xHandle]: ["rich_text", "url"],
 };
 
 /**
@@ -65,8 +67,15 @@ export async function detectAndValidateSchema(): Promise<BoardSchema> {
   const ds: any = await notion.dataSources.retrieve({ data_source_id: dsId });
   const props: Record<string, any> = ds.properties ?? {};
 
+  const presentOptional = new Set<string>();
+  for (const name of OPTIONAL_COLUMNS) {
+    if (props[name]) presentOptional.add(name);
+    else console.log(`[schema] optional column "${name}" not on the board — skipping it`);
+  }
+
   const problems: string[] = [];
   for (const [name, accepted] of Object.entries(ACCEPTED_TYPES)) {
+    if (OPTIONAL_COLUMNS.includes(name) && !props[name]) continue;
     const prop = props[name];
     if (!prop) {
       problems.push(`missing property "${name}" (accepted: ${accepted.join(" or ")})`);
@@ -129,6 +138,7 @@ export async function detectAndValidateSchema(): Promise<BoardSchema> {
     categoryType:
       props[COLUMNS.category]?.type === "multi_select" ? "multi_select" : "select",
     ticketIdWritable: props[COLUMNS.ticketId]?.type === "rich_text",
+    presentOptional,
     statusMap,
   };
   console.log(
@@ -354,6 +364,7 @@ export function changedFields(
     "ticket", "channel", "customer", "description", "priority",
     "threadLink", "engStatus",
   ];
+  if (schema.presentOptional.has(COLUMNS.xHandle)) textKeys.push("xHandle");
   for (const k of textKeys) {
     if (
       normalize(existing.row[k] as string | null | undefined) !==
@@ -497,5 +508,6 @@ function extractRow(props: any): Partial<TicketRow> {
     ticketRef: plainTextOf(props[COLUMNS.ticketId]) ?? undefined,
     threadLink: urlOf(props[COLUMNS.threadLink]) ?? undefined,
     engStatus: selectOf(props[COLUMNS.engStatus]),
+    xHandle: plainTextOf(props[COLUMNS.xHandle]) ?? urlOf(props[COLUMNS.xHandle]),
   };
 }

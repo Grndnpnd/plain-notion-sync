@@ -4,7 +4,8 @@
   "description": "One-way daily sync: Plain support threads -> Notion ticket board",
   "scripts": {
     "start": "tsx src/index.ts",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "probe": "tsx src/probe.ts"
   },
   "keywords": [],
   "author": "",
