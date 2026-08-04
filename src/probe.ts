@@ -58,7 +58,7 @@ async function main(): Promise<void> {
          id
          title
          threadFields { key type stringValue booleanValue }
-         timelineEntries(first: 5) {
+         timelineEntries(last: 8) {
            edges { node {
              id
              timestamp { iso8601 }

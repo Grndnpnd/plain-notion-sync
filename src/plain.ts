@@ -67,8 +67,10 @@ export async function fetchEnrichment(
   // email/chat message, so ask for component text too. Richest variant first;
   // the tiering below falls back if a shape isn't in this workspace's schema.
   const timelineRich = `
-    timelineEntries(first: 5) {
-      edges { node { entry {
+    timelineEntries(last: 8) {
+      edges { node {
+        timestamp { iso8601 }
+        entry {
         __typename
         ... on EmailEntry { textContent }
         ... on ChatEntry { text }
@@ -88,12 +90,15 @@ export async function fetchEnrichment(
     }`;
 
   const timelineBasic = `
-    timelineEntries(first: 5) {
-      edges { node { entry {
-        __typename
-        ... on EmailEntry { textContent }
-        ... on ChatEntry { text }
-      } } }
+    timelineEntries(last: 8) {
+      edges { node {
+        timestamp { iso8601 }
+        entry {
+          __typename
+          ... on EmailEntry { textContent }
+          ... on ChatEntry { text }
+        }
+      } }
     }`;
 
   const variants: string[] = [
@@ -189,14 +194,27 @@ function collectText(value: unknown, out: string[], depth = 0): void {
   }
 }
 
-/** Text of the first timeline entry that carries any, else null. */
+/**
+ * Text of the EARLIEST timeline entry that carries any, else null.
+ *
+ * Plain returns timeline entries newest-first and interleaves metadata
+ * entries (label/status/priority changes), so neither "the first edge" nor
+ * "the newest" is the original message. Sort by timestamp ascending and take
+ * the oldest text-bearing entry — that's the form submission / first inbound
+ * message regardless of how much automation churn sits on top of it.
+ */
 function firstMessageTextOf(node: any): string | null {
   const edges = node?.timelineEntries?.edges ?? [];
+  const candidates: { ts: string; text: string }[] = [];
   for (const e of edges) {
     const parts: string[] = [];
     collectText(e?.node?.entry, parts);
     const joined = parts.join("\n").trim();
-    if (joined) return joined;
+    if (joined) {
+      candidates.push({ ts: e?.node?.timestamp?.iso8601 ?? "", text: joined });
+    }
   }
-  return null;
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => a.ts.localeCompare(b.ts));
+  return candidates[0].text;
 }

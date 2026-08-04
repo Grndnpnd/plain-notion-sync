@@ -82,6 +82,15 @@ submissions (Plain custom entries, where the label and value can live in
 separate nested components) are both flattened to text before matching, so
 the field is found either way.
 
+Plain returns timeline entries newest-first and interleaves metadata entries
+(label/status/priority changes), so the sync requests the tail of the
+connection and picks the EARLIEST text-bearing entry — the original
+submission, not whichever reply or automation event is on top.
+
+Requires the `timeline:read` scope on the Plain API key. Without it the
+enrichment query logs `[enrich] query variant N failed (... missing
+"timeline:read")` and X Handle stays empty.
+
 Values are normalized to `@handle`, including full `x.com/...` URLs.
 
 **Optional-column behaviour:** if the board has no `X Handle` property the
