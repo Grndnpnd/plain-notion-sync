@@ -177,6 +177,18 @@ const TEXT_KEYS = new Set([
   "copyButtonTooltipLabel",
 ]);
 
+/**
+ * Plain renders form labels with markdown emphasis
+ * ("**X Handle / Project X Handle:**"), which puts the trailing ** where a
+ * value would be. Strip emphasis markers so labels end at their colon.
+ */
+function stripMarkdown(s: string): string {
+  return s
+    .replace(/\*\*/g, "")
+    .replace(/^[*_~`\s]+|[*_~`\s]+$/g, "")
+    .trim();
+}
+
 function collectText(value: unknown, out: string[], depth = 0): void {
   if (depth > 8 || value == null) return;
   if (Array.isArray(value)) {
@@ -187,7 +199,9 @@ function collectText(value: unknown, out: string[], depth = 0): void {
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     if (k === "__typename") continue;
     if (typeof v === "string") {
-      if (TEXT_KEYS.has(k) && v.trim()) out.push(v.trim());
+      if (!TEXT_KEYS.has(k)) continue;
+      const cleaned = stripMarkdown(v);
+      if (cleaned) out.push(cleaned);
     } else {
       collectText(v, out, depth + 1);
     }

@@ -160,10 +160,19 @@ function labelledValueFromBody(
 ): string | null {
   if (!body) return null;
   const esc = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const sameLine = new RegExp(`${esc}\\s*:\\s*(.+)`, "i").exec(body);
-  if (sameLine?.[1]?.trim()) return sameLine[1].trim().split(/\s{2,}/)[0];
-  const nextLine = new RegExp(`${esc}\\s*:?\\s*[\\r\\n]+\\s*(.+)`, "i").exec(body);
-  if (nextLine?.[1]?.trim()) return nextLine[1].trim();
+
+  // Try in order; the first candidate with usable content wins. Leftover
+  // emphasis or an empty capture falls through instead of returning junk.
+  const patterns = [
+    new RegExp(`${esc}\\s*:?\\s*[*_~\`]*\\s*(.+)`, "i"),
+    new RegExp(`${esc}[^\\r\\n]*[\\r\\n]+\\s*(.+)`, "i"),
+  ];
+  for (const re of patterns) {
+    const m = re.exec(body);
+    const raw = m?.[1]?.trim().split(/\s{2,}/)[0];
+    const cleaned = raw?.replace(/[*_~`]/g, "").trim();
+    if (cleaned && /[A-Za-z0-9]/.test(cleaned)) return cleaned;
+  }
   return null;
 }
 

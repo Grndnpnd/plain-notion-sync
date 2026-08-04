@@ -82,6 +82,10 @@ submissions (Plain custom entries, where the label and value can live in
 separate nested components) are both flattened to text before matching, so
 the field is found either way.
 
+Form labels arrive markdown-bolded (`**X Handle / Project X Handle:**`, colon
+inside the emphasis), so entry text is stripped of emphasis markers before
+matching and an empty capture falls through to the next line.
+
 Plain returns timeline entries newest-first and interleaves metadata entries
 (label/status/priority changes), so the sync requests the tail of the
 connection and picks the EARLIEST text-bearing entry — the original
